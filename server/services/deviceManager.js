@@ -2,18 +2,38 @@ let devices = [];
 const historyData = new Map();
 const MAX_HISTORY_POINTS = 60;
 
+function checkEnvironmentStatus(temperature, humidity) {
+  const isTempTooHigh = temperature >= 68;
+  const isTempTooLow = temperature <= 35;
+  const isHumidityTooLow = humidity <= 40;
+  const isHumidityTooHigh = humidity >= 85;
+
+  if ((isTempTooHigh && isHumidityTooLow) ||
+      (isTempTooLow && isHumidityTooHigh) ||
+      (isHumidityTooLow && temperature >= 55) ||
+      (isTempTooHigh && humidity <= 55)) {
+    return 'unbalanced';
+  }
+  return 'normal';
+}
+
 function generateRandomMetric(base, variance) {
   return Number((base + (Math.random() - 0.5) * variance).toFixed(2));
 }
 
 function createInitialState() {
-  return {
+  const metrics = {
     stirringSpeed: generateRandomMetric(60, 20),
     bacteriaTemperature: generateRandomMetric(55, 5),
     humidity: generateRandomMetric(65, 10),
     gasConcentration: generateRandomMetric(800, 200),
     timestamp: new Date().toISOString()
   };
+  metrics.environmentStatus = checkEnvironmentStatus(
+    metrics.bacteriaTemperature,
+    metrics.humidity
+  );
+  return metrics;
 }
 
 function initDevices() {
@@ -52,7 +72,8 @@ function getAllDevices() {
     location: d.location,
     status: d.status,
     metrics: d.metrics,
-    lastUpdate: d.lastUpdate
+    lastUpdate: d.lastUpdate,
+    environmentStatus: d.metrics.environmentStatus
   }));
 }
 
@@ -61,6 +82,7 @@ function getDeviceById(id) {
   if (!device) return null;
   return {
     ...device,
+    environmentStatus: device.metrics.environmentStatus,
     history: historyData.get(id) || []
   };
 }
@@ -69,7 +91,16 @@ function updateDeviceMetrics(deviceId, metrics) {
   const device = devices.find(d => d.id === deviceId);
   if (!device) return null;
 
-  device.metrics = { ...metrics, timestamp: new Date().toISOString() };
+  const environmentStatus = checkEnvironmentStatus(
+    metrics.bacteriaTemperature,
+    metrics.humidity
+  );
+
+  device.metrics = {
+    ...metrics,
+    environmentStatus,
+    timestamp: new Date().toISOString()
+  };
   device.lastUpdate = new Date().toISOString();
 
   const history = historyData.get(deviceId);
@@ -131,5 +162,6 @@ module.exports = {
   getDeviceById,
   updateDeviceMetrics,
   updateDeviceStatus,
-  executeCommand
+  executeCommand,
+  checkEnvironmentStatus
 };

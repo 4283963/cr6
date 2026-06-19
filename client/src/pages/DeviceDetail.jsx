@@ -1,6 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceArea
+} from 'recharts';
 import { useDeviceDetail } from '../services/useDeviceData.js';
 
 const statusMap = {
@@ -15,7 +24,32 @@ function formatTime(iso) {
   return d.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function MetricChart({ title, dataKey, data, color, unit, currentValue, icon }) {
+function getUnbalancedRanges(data) {
+  const ranges = [];
+  let inRange = false;
+  let start = null;
+
+  for (let i = 0; i < data.length; i++) {
+    const item = data[i];
+    if (item.environmentStatus === 'unbalanced') {
+      if (!inRange) {
+        inRange = true;
+        start = i;
+      }
+    } else {
+      if (inRange) {
+        ranges.push({ start: data[start].timestamp, end: data[i - 1].timestamp });
+        inRange = false;
+      }
+    }
+  }
+  if (inRange && start !== null) {
+    ranges.push({ start: data[start].timestamp, end: data[data.length - 1].timestamp });
+  }
+  return ranges;
+}
+
+function MetricChart({ title, dataKey, data, color, unit, currentValue, icon, unbalancedRanges }) {
   return (
     <div className="chart-card">
       <div className="chart-header">
@@ -23,8 +57,14 @@ function MetricChart({ title, dataKey, data, color, unit, currentValue, icon }) 
           <span>{icon}</span>
           {title}
         </div>
-        <div className="chart-value" style={{ color }}>
-          {currentValue}<span className="unit">{unit}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div className="unbalanced-legend">
+            <span className="swatch"></span>
+            <span>环境失衡</span>
+          </div>
+          <div className="chart-value" style={{ color }}>
+            {currentValue}<span className="unit">{unit}</span>
+          </div>
         </div>
       </div>
       <div className="chart-container">
@@ -34,6 +74,12 @@ function MetricChart({ title, dataKey, data, color, unit, currentValue, icon }) 
               <linearGradient id={`gradient-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={color} stopOpacity={0.3} />
                 <stop offset="95%" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id={`warning-gradient-${dataKey}`} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#ef4444" stopOpacity="0" />
+                <stop offset="10%" stopColor="#ef4444" stopOpacity="0.12" />
+                <stop offset="90%" stopColor="#ef4444" stopOpacity="0.12" />
+                <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#2d3a52" vertical={false} />
@@ -63,6 +109,17 @@ function MetricChart({ title, dataKey, data, color, unit, currentValue, icon }) 
               formatter={(value) => [`${value} ${unit}`, title]}
               labelFormatter={formatTime}
             />
+            {unbalancedRanges.map((range, idx) => (
+              <ReferenceArea
+                key={idx}
+                x1={range.start}
+                x2={range.end}
+                stroke="#ef4444"
+                strokeDasharray="3 3"
+                strokeOpacity={0.5}
+                fill={`url(#warning-gradient-${dataKey})`}
+              />
+            ))}
             <Line
               type="monotone"
               dataKey={dataKey}
@@ -101,10 +158,13 @@ function DeviceDetail() {
     return <div className="loading">设备不存在</div>;
   }
 
-  const chartData = history.map((h, i) => ({
+  const chartData = useMemo(() => history.map((h, i) => ({
     ...h,
     timestamp: h.timestamp || new Date(Date.now() - (history.length - i) * 3000).toISOString()
-  }));
+  })), [history]);
+
+  const unbalancedRanges = useMemo(() => getUnbalancedRanges(chartData), [chartData]);
+  const isUnbalanced = device.metrics?.environmentStatus === 'unbalanced';
 
   return (
     <div className="detail-page">
@@ -116,7 +176,14 @@ function DeviceDetail() {
         <div className="device-info-left">
           <div className="device-avatar">♻️</div>
           <div className="device-info-text">
-            <h2>{device.name}</h2>
+            <h2>
+              {device.name}
+              {isUnbalanced && (
+                <span className="device-condition-warning" style={{ marginLeft: '12px', fontSize: '13px', padding: '4px 10px' }}>
+                  ⚠️ 菌群环境调理中
+                </span>
+              )}
+            </h2>
             <div className="device-meta">
               <span>ID: {device.id}</span>
               <span>📍 {device.location}</span>
@@ -140,6 +207,7 @@ function DeviceDetail() {
           unit="rpm"
           currentValue={device.metrics.stirringSpeed}
           icon="🌀"
+          unbalancedRanges={unbalancedRanges}
         />
         <MetricChart
           title="降解菌群温度"
@@ -149,6 +217,7 @@ function DeviceDetail() {
           unit="°C"
           currentValue={device.metrics.bacteriaTemperature}
           icon="🌡️"
+          unbalancedRanges={unbalancedRanges}
         />
         <MetricChart
           title="环境湿度"
@@ -158,6 +227,7 @@ function DeviceDetail() {
           unit="%"
           currentValue={device.metrics.humidity}
           icon="💧"
+          unbalancedRanges={unbalancedRanges}
         />
         <MetricChart
           title="气体浓度"
@@ -167,6 +237,7 @@ function DeviceDetail() {
           unit="ppm"
           currentValue={device.metrics.gasConcentration}
           icon="💨"
+          unbalancedRanges={unbalancedRanges}
         />
       </div>
 
