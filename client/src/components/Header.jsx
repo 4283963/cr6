@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { useWebSocket } from '../contexts/WebSocketContext.jsx';
 
 function Header() {
   const [time, setTime] = useState(new Date());
-  const [connected, setConnected] = useState(false);
-  const location = useLocation();
+  const { connected } = useWebSocket();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -12,26 +12,6 @@ function Header() {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    const wsUrl = location.pathname.includes('/device/')
-      ? 'ws://localhost:3001/ws'
-      : '/ws';
-
-    let ws;
-    try {
-      ws = new WebSocket(wsUrl);
-      ws.onopen = () => setConnected(true);
-      ws.onclose = () => setConnected(false);
-      ws.onerror = () => setConnected(false);
-    } catch (e) {
-      setConnected(false);
-    }
-
-    return () => {
-      if (ws) ws.close();
-    };
-  }, [location.pathname]);
 
   const formatDate = (d) => {
     return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
